@@ -1,0 +1,17 @@
+.venv/
+models/
+voices/
+dicts/
+.npucache/
+__pycache__/
+*.pyc
+.env
+
+# Hugging Face caches
+.cache/
+.huggingface/
+huggingface/
+
+# Downloaded vendor dumps (not project source)
+openvino-docs-2026/
+langchain-docs/
