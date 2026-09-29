@@ -162,8 +162,8 @@ def download_dicts() -> None:
         "Italian IPA: CMUSphinx Italian dict converted by dohliam/cmu-ipa\n"
         "  https://github.com/dohliam/cmu-ipa  (~7k words)\n"
         "\n"
-        "Any word missing from these files can still be phonemized live via\n"
-        "espeak-ng (bundled with piper-tts) from the Talk UI dictionary tab.\n"
+        "Optional pronunciation lists from an earlier experiment. Talk does not\n"
+        "read them. Piper still phonemizes via espeak-ng at runtime.\n"
     )
     print(f"wrote {sources}")
 

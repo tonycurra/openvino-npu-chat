@@ -7,6 +7,10 @@ __pycache__/
 *.pyc
 .env
 
+# Editor / IDE
+.zed/
+.claude/
+
 # Hugging Face caches
 .cache/
 .huggingface/
@@ -15,3 +19,4 @@ huggingface/
 # Downloaded vendor dumps (not project source)
 openvino-docs-2026/
 langchain-docs/
+Intel_UPE_SpecificationsChart_*.csv

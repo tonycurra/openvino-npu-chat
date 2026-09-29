@@ -17,10 +17,10 @@ This machine already has GenAI **2026.3.1**. Export is **offline after the downl
 | Same, but 14B–32B | Maybe. RAM and first NPU **compile** hurt. | Hours, may OOM. |
 | GPTQ / already-INT4 HF repo | Often `optimum-cli export openvino -m …` with no extra flags. | Easier than FP16. |
 | Whisper | Yes, different flags (INT8, not INT4-CW). | Easy. We already use `whisper-small-int8-ov`. |
-| VLM (Gemma 3, etc.) | Same family of export; GenAI `VLMPipeline`. | Medium. Gemma 3 here is gated and **not** downloaded. |
+| VLM (Gemma 3, etc.) | Same family of export; GenAI `VLMPipeline`. | Medium. Gemma 3 4B is on disk here (gated HF repo). |
 | Diffusion / SD / Flux (image **generation**) | `Text2ImagePipeline`, usually **CPU/GPU**. NPU can take text-encoder; UNet often stays CPU. | Separate project. Not the NPU LLM recipe. |
 | Random `.gguf` / `.safetensors` custom arch / huge MoE | Often no. GenAI must know the topology. | Hard or impossible. |
-| Piper / Kokoro TTS | Not NPU LLMs. Piper is ONNX CPU. Kokoro is GenAI speech, CPU here so the NPU stays on chat. | Already local. |
+| Piper / Kokoro TTS | Not NPU LLMs. Piper is ONNX on CPU. Kokoro is GenAI speech on GPU/CPU so the NPU stays on chat. | Already local. |
 
 NPU is picky: **symmetric INT4 (or NF4)**, **`--sym`**, **`--ratio 1.0`**, and either **channel-wise** (`--group-size -1`) or **group-128**. A default CPU INT8/FP16 export often **will not** load on NPU.
 
@@ -71,7 +71,7 @@ Use a **throwaway venv** so Optimum does not fight the talk runtime. Pins change
 python3 -m venv ~/venvs/ov-export
 source ~/venvs/ov-export/bin/activate
 pip install -U pip
-# example pins from the 2026.2 NPU doc — bump to match your GenAI minor if needed
+# pins move every OpenVINO minor — this laptop is GenAI 2026.3.1
 pip install nncf onnx optimum-intel transformers
 pip install openvino openvino-tokenizers openvino-genai
 ```

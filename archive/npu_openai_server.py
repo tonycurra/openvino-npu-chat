@@ -59,17 +59,20 @@ import re
 import threading
 import time
 import uuid
+from pathlib import Path
 
 import openvino_genai as ov_genai
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+ROOT = Path(__file__).resolve().parent.parent
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-MODEL_PATH = "models/npu/Phi-3.5-mini-instruct-int4-gq-ov"
+MODEL_PATH = str(ROOT / "models" / "npu" / "Phi-3.5-mini-instruct-int4-gq-ov")
 DEVICE = "NPU"  # "NPU", "GPU", or "CPU" -- CPU is a useful fallback for debugging
 
 # Advertised model id. Clients send this back in requests; we ignore the value

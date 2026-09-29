@@ -32,7 +32,7 @@ WHISPER_HF_ID = "OpenVINO/whisper-small-int8-ov"
 WHISPER_DIR = MODELS_WHISPER / "whisper-small-int8-ov"
 
 # LLM on NPU. Load one at a time — the NPU will not hold several of these.
-# kind: "llm" uses LLMPipeline, "vlm" uses VLMPipeline (text still works).
+# kind: "llm" uses LLMPipeline, "vlm" uses VLMPipeline (text-only chat is valid).
 NPU_MODELS = [
     {
         "hf_id": "OpenVINO/Phi-3.5-mini-instruct-int4-gq-ov",
@@ -82,7 +82,8 @@ NPU_MODELS = [
     {
         "hf_id": "OpenVINO/gemma-3-4b-it-int4-cw-ov",
         "kind": "vlm",
-        "label": "Gemma 3 4B IT · INT4 CW (vision+text)",
+        "label": "Gemma 3 4B · text (VLM weights)",
+        "note": "Text chat is fine — no image needed. Runs on CPU; use Phi for NPU.",
         "gated": True,
     },
 ]
@@ -115,7 +116,7 @@ NPU_PIPELINE_CONFIG = {
     "GENERATE_HINT": "BEST_PERF",
 }
 
-MAX_NEW_TOKENS = 48
+MAX_NEW_TOKENS = 256
 
 # Rolling chat: last N user/assistant pairs. NPU MAX_PROMPT_LEN is 1024, so
 # keep this tiny — no vector store, no disk, no summaries.

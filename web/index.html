@@ -8,73 +8,42 @@
   html, body { margin: 0; height: 100%; background: #000; color: #eee; }
   body { font: 15px/1.45 system-ui, sans-serif; display: flex; flex-direction: column; }
   header, footer { display: flex; gap: .5rem; align-items: center; padding: .55rem .8rem; flex-shrink: 0; }
-  header { border-bottom: 1px solid #222; flex-wrap: wrap; }
+  header { border-bottom: 1px solid #222; }
   footer { border-top: 1px solid #222; align-items: flex-end; }
   header select, header input, #in {
     background: #000; color: #eee; border: 1px solid #333; padding: .35rem .45rem; font: inherit;
   }
-  header select { max-width: 16rem; }
-  #tokens { width: 4.2rem; }
-  #who { max-width: 7.5rem; }
-  #who_custom { width: 11rem; }
+  #agent { flex: 1; max-width: 28rem; }
+  #tokens { width: 5rem; }
   #note { margin-left: auto; color: #444; font-size: .75rem; }
   #log { flex: 1; overflow: auto; padding: 1rem .8rem 2rem; display: flex; flex-direction: column; gap: .8rem; }
   .msg { max-width: 42rem; white-space: pre-wrap; }
   .me { align-self: flex-end; color: #fff; }
   .bot { align-self: flex-start; color: #bbb; }
+  .who { display: block; color: #555; font-size: .75rem; margin-bottom: .15rem; }
   .sys { align-self: center; color: #555; font-size: .8rem; }
   #in { flex: 1; resize: none; min-height: 2.4rem; max-height: 8rem; }
-  .icon {
-    width: 2.4rem; height: 2.4rem; padding: 0; flex-shrink: 0;
-    background: #000; color: #888; border: 1px solid #333; cursor: pointer;
-    display: grid; place-items: center;
+  button {
+    background: #000; color: #eee; border: 1px solid #444; padding: .45rem .8rem;
+    font: inherit; cursor: pointer;
   }
-  .icon svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-  .icon:hover:not(:disabled) { color: #eee; border-color: #666; }
-  .icon:disabled { opacity: .35; cursor: default; }
-  .icon.on { color: #eee; border-color: #888; }
-  .icon.live { color: #6c8; border-color: #6c8; }
-  .icon.rec { color: #c55; border-color: #c55; }
-  audio { display: none; }
+  button:disabled { opacity: .35; cursor: default; }
 </style>
 </head>
 <body>
 <header>
   <select id="agent" title="model"></select>
-  <input id="tokens" type="number" min="16" max="512" step="16" value="48" title="max new tokens">
-  <select id="who" title="personality"></select>
-  <input id="who_custom" hidden maxlength="280" placeholder="one line" title="custom personality">
-  <button id="fresh" class="icon" type="button" title="new chat">
-    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-  </button>
-  <select id="tts" title="tts" hidden></select>
-  <select id="voice" title="voice" hidden></select>
-  <input id="speaker" type="number" min="0" value="0" hidden title="speaker">
-  <button id="snd" class="icon" type="button" title="audio off" aria-pressed="false">
-    <svg viewBox="0 0 24 24" id="snd-svg"></svg>
-  </button>
+  <input id="tokens" type="number" min="16" max="2048" step="16" value="128" title="max new tokens">
   <span id="note"></span>
 </header>
 <main id="log"></main>
 <footer>
   <textarea id="in" rows="1" placeholder="message"></textarea>
-  <button id="mic" class="icon" type="button" title="record">
-    <svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
-  </button>
-  <button id="send" class="icon" type="button" title="send">
-    <svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
-  </button>
+  <button id="send" type="button">send</button>
 </footer>
-<audio id="out"></audio>
 <script>
 const $ = id => document.getElementById(id);
-const ICO = {
-  on: '<path d="M4 10v4h3l4 4V6L7 10H4z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M18.5 7a7 7 0 0 1 0 10"/>',
-  off: '<path d="M4 10v4h3l4 4V6L7 10H4z"/><path d="M18 9l-6 6M12 9l6 6"/>',
-  stop: '<rect x="7" y="7" width="10" height="10" rx="1"/>',
-};
-let rec = null, state = {}, busy = false, sound = false, playing = false;
-let past = [];
+let state = {}, busy = false;
 
 function line(text, cls) {
   const d = document.createElement("div");
@@ -85,62 +54,25 @@ function line(text, cls) {
   return d;
 }
 
-function fillVoices() {
-  const engines = state.tts || [];
-  const eng = engines.find(e => e.id === $("tts").value) || engines[0];
-  $("voice").innerHTML = "";
-  if (!eng) return;
-  const prefer = eng.id === "kokoro" ? state.default_kokoro : state.default_voice;
-  for (const v of eng.voices || []) {
-    const o = document.createElement("option");
-    o.value = v.id;
-    o.textContent = v.lang ? v.id + " · " + v.lang : v.id;
-    if (v.id === prefer) o.selected = true;
-    $("voice").appendChild(o);
+function bot(text, who) {
+  const d = document.createElement("div");
+  d.className = "msg bot";
+  if (who) {
+    const w = document.createElement("span");
+    w.className = "who";
+    w.textContent = who;
+    d.appendChild(w);
   }
-}
-
-function paintSnd() {
-  $("snd").classList.toggle("on", sound && !playing);
-  $("snd").classList.toggle("live", playing);
-  $("snd").setAttribute("aria-pressed", sound);
-  $("snd").title = playing ? "stop" : sound ? "audio on" : "audio off";
-  $("snd-svg").innerHTML = playing ? ICO.stop : sound ? ICO.on : ICO.off;
-  $("tts").hidden = !sound;
-  $("voice").hidden = !sound;
-  const engines = state.tts || [];
-  const eng = engines.find(e => e.id === $("tts").value);
-  const v = eng && (eng.voices || []).find(x => x.id === $("voice").value);
-  const n = v ? v.speakers : 1;
-  $("speaker").hidden = !sound || n <= 1;
-  $("speaker").max = Math.max(0, n - 1);
+  d.appendChild(document.createTextNode(text));
+  $("log").appendChild(d);
+  $("log").scrollTop = $("log").scrollHeight;
+  return d;
 }
 
 function setBusy(on) {
   busy = on;
   $("send").disabled = on;
-  $("mic").disabled = on && !rec;
   $("agent").disabled = on;
-  $("who").disabled = on;
-  $("fresh").disabled = on;
-}
-
-function stopAudio() {
-  const a = $("out");
-  a.pause();
-  a.removeAttribute("src");
-  a.load();
-  playing = false;
-  paintSnd();
-}
-
-function playAudio(b64) {
-  const a = $("out");
-  stopAudio();
-  a.src = "data:audio/wav;base64," + b64;
-  playing = true;
-  paintSnd();
-  a.play();
 }
 
 async function boot() {
@@ -148,181 +80,57 @@ async function boot() {
   for (const a of state.agents) {
     if (!a.ready) continue;
     const o = document.createElement("option");
-    o.value = a.id; o.textContent = a.label;
+    o.value = a.id;
+    o.textContent = a.label;
     if (a.id === state.default_agent) o.selected = true;
     $("agent").appendChild(o);
   }
-  for (const e of state.tts || []) {
-    const o = document.createElement("option");
-    o.value = e.id;
-    o.textContent = e.ready ? e.label : e.label + " (missing)";
-    o.disabled = !e.ready;
-    if (e.id === (localStorage.tts || state.default_tts)) o.selected = true;
-    $("tts").appendChild(o);
-  }
-  if ($("tts").selectedIndex < 0 && $("tts").options.length) $("tts").selectedIndex = 0;
-  fillVoices();
   if (state.default_tokens) $("tokens").value = state.default_tokens;
-  fillWho();
-  sound = localStorage.sound === "1";
-  paintSnd();
-  $("note").textContent = "llm " + state.llm_device + (state.whisper ? " · stt " + state.stt_device : "");
-  if (!state.whisper) {
-    $("mic").hidden = true;
-    line("no whisper on disk — type for now", "sys");
-  }
+  $("note").textContent = "llm " + state.llm_device;
   if (!$("agent").options.length) line("no llm on disk", "sys");
 }
 
-function encodeWav(pcm, sr) {
-  const buf = new ArrayBuffer(44 + pcm.length * 2);
-  const v = new DataView(buf);
-  const w = (i, s) => { for (let k = 0; k < s.length; k++) v.setUint8(i + k, s.charCodeAt(k)); };
-  w(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true); w(8, "WAVE");
-  w(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-  w(36, "data"); v.setUint32(40, pcm.length * 2, true);
-  let p = 44;
-  for (let i = 0; i < pcm.length; i++, p += 2) {
-    const s = Math.max(-1, Math.min(1, pcm[i]));
-    v.setInt16(p, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  return new Blob([buf], { type: "audio/wav" });
-}
-
-async function startMic() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  const ctx = new AudioContext({ sampleRate: 16000 });
-  const sr = ctx.sampleRate;
-  const src = ctx.createMediaStreamSource(stream);
-  const proc = ctx.createScriptProcessor(4096, 1, 1);
-  const data = [];
-  proc.onaudioprocess = e => data.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-  src.connect(proc); proc.connect(ctx.destination);
-  return {
-    async stop() {
-      proc.disconnect(); src.disconnect();
-      stream.getTracks().forEach(t => t.stop());
-      await ctx.close();
-      const n = data.reduce((a, b) => a + b.length, 0);
-      const pcm = new Float32Array(n);
-      let o = 0; for (const c of data) { pcm.set(c, o); o += c.length; }
-      return encodeWav(pcm, sr);
-    }
-  };
-}
-
-function fillWho() {
-  const box = $("who");
-  box.innerHTML = "";
-  for (const p of state.personas || []) {
-    const o = document.createElement("option");
-    o.value = p.id;
-    o.textContent = p.label;
-    box.appendChild(o);
-  }
-  const custom = document.createElement("option");
-  custom.value = "custom";
-  custom.textContent = "custom";
-  box.appendChild(custom);
-  const saved = localStorage.who || "plain";
-  box.value = [...box.options].some(o => o.value === saved) ? saved : "plain";
-  $("who_custom").value = localStorage.who_custom || "";
-  paintWho();
-}
-
-function paintWho() {
-  $("who_custom").hidden = $("who").value !== "custom";
-}
-
-function personaText() {
-  if ($("who").value === "custom") return ($("who_custom").value || "").trim();
-  const p = (state.personas || []).find(x => x.id === $("who").value);
-  return p ? p.text : "";
-}
-
-function resetChat() {
-  past = [];
-  stopAudio();
-  $("log").innerHTML = "";
-  line("new chat", "sys");
-}
-
-function remember(user, reply) {
-  if (user) past.push({ role: "user", content: user });
-  if (reply) past.push({ role: "assistant", content: reply });
-  const n = (state.history_turns || 4) * 2;
-  if (past.length > n) past = past.slice(-n);
-}
-
-async function send(audioBlob) {
+async function send() {
   const text = $("in").value.trim();
-  if (!text && !audioBlob) return;
-  if (busy) return;
-  stopAudio();
+  if (!text || busy) return;
+  const agent = $("agent").value;
+  const label = $("agent").selectedOptions[0].textContent;
   $("in").value = "";
-  if (text) line(text, "me");
-  else line("…", "me").dataset.pending = "1";
-  const wait = line("…", "bot");
+  line(text, "me");
+  const wait = bot("…", label);
   setBusy(true);
   const fd = new FormData();
-  fd.append("agent", $("agent").value);
-  fd.append("voice", $("voice").value);
-  fd.append("speaker", $("speaker").value);
-  fd.append("speak", sound ? "1" : "0");
-  fd.append("tts", $("tts").value);
+  fd.append("agent", agent);
   fd.append("tokens", $("tokens").value);
   fd.append("text", text);
-  fd.append("persona", personaText());
-  fd.append("history", JSON.stringify(past));
-  if (audioBlob) fd.append("audio", audioBlob, "in.wav");
+  fd.append("speak", "0");
   try {
     const r = await fetch("/api/talk", { method: "POST", body: fd });
     const j = await r.json();
-    if (j.heard) {
-      const pending = [...$("log").querySelectorAll(".me")].find(el => el.dataset.pending);
-      if (pending) { pending.textContent = j.heard; delete pending.dataset.pending; }
-      else if (!text) line(j.heard, "me");
+    if (!r.ok) {
+      wait.textContent = j.error || "error";
+      wait.className = "msg sys";
+      return;
     }
-    if (!r.ok) { wait.textContent = j.error || "error"; wait.className = "msg sys"; return; }
-    wait.textContent = j.reply || "";
-    remember(j.heard || text, j.reply || "");
-    if (j.audio) playAudio(j.audio);
+    wait.textContent = "";
+    const w = document.createElement("span");
+    w.className = "who";
+    w.textContent = (j.agent || label) + (j.device ? " · " + j.device : "") + (j.status ? " · " + j.status.replace(/^ok · /, "") : "");
+    wait.appendChild(w);
+    wait.appendChild(document.createTextNode(j.reply || ""));
   } catch (e) {
-    wait.textContent = String(e); wait.className = "msg sys";
+    wait.textContent = String(e);
+    wait.className = "msg sys";
   } finally {
     setBusy(false);
+    $("in").focus();
   }
 }
 
-$("snd").onclick = () => {
-  if (playing) { stopAudio(); return; }
-  sound = !sound;
-  localStorage.sound = sound ? "1" : "0";
-  paintSnd();
-};
-$("tts").onchange = () => { localStorage.tts = $("tts").value; fillVoices(); paintSnd(); };
-$("who").onchange = () => { localStorage.who = $("who").value; paintWho(); };
-$("who_custom").onchange = () => { localStorage.who_custom = $("who_custom").value; };
-$("fresh").onclick = resetChat;
-$("voice").onchange = paintSnd;
-$("out").onended = () => { playing = false; paintSnd(); };
-$("send").onclick = () => send(null);
+$("send").onclick = send;
 $("in").addEventListener("keydown", e => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(null); }
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
 });
-$("mic").onclick = async () => {
-  if (rec) {
-    const b = await rec.stop(); rec = null;
-    $("mic").classList.remove("rec");
-    await send(b);
-    return;
-  }
-  if (busy) return;
-  rec = await startMic();
-  $("mic").classList.add("rec");
-};
-
 boot();
 </script>
 </body>

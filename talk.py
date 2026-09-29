@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local NPU chat. Short rolling memory, optional personality.
+"""Local NPU chat. One prompt, pick a model.
 
     .venv/bin/python talk.py
     open http://127.0.0.1:7860
@@ -28,19 +28,14 @@ from config import (
     DEFAULT_AGENT,
     DEFAULT_KOKORO_VOICE,
     DEFAULT_VOICE,
-    HISTORY_CHARS,
-    HISTORY_TURNS,
     KOKORO_DIR,
     MAX_NEW_TOKENS,
     MODELS_NPU,
     NPU_MODELS,
     NPU_PIPELINE_CONFIG,
-    PERSONA_CHARS,
-    PERSONAS,
     ROOT,
     VOICES_PIPER,
     WHISPER_DIR,
-    budget_prompt,
     kokoro_lang,
     kokoro_ready,
     local_agents,
@@ -66,7 +61,7 @@ STT_DEVICE = _pick(["NPU", "CPU"])
 TTS_DEVICE = _pick(["GPU", "CPU"])
 
 _lock = threading.Lock()
-_llm = _llm_id = _llm_kind = _whisper = _voice = _voice_name = _kokoro = None
+_llm = _llm_id = _llm_kind = _llm_device = _whisper = _voice = _voice_name = _kokoro = None
 _kokoro_emb = {}
 
 app = FastAPI()
@@ -99,7 +94,7 @@ def _load_whisper():
 
 
 def _load_llm(agent_id):
-    global _llm, _llm_id, _llm_kind
+    global _llm, _llm_id, _llm_kind, _llm_device
     if _llm is not None and _llm_id == agent_id:
         return _llm, _llm_kind
     spec = next((s for s in NPU_MODELS if s["hf_id"].endswith(agent_id)), None) or {
@@ -107,26 +102,39 @@ def _load_llm(agent_id):
         "kind": "llm",
     }
     path = model_dir(spec["hf_id"])
-    print(f"Loading {agent_id} on {LLM_DEVICE}")
-    _llm = None
     kind = spec.get("kind", "llm")
     cache = ROOT / ".npucache" / agent_id
     cache.mkdir(parents=True, exist_ok=True)
-    cfg = {**NPU_PIPELINE_CONFIG, "CACHE_DIR": str(cache)}
-    try:
-        _llm = (
-            ov_genai.VLMPipeline(str(path), LLM_DEVICE)
-            if kind == "vlm"
-            else ov_genai.LLMPipeline(str(path), LLM_DEVICE, cfg)
-        )
-    except Exception:
-        _llm = (
-            ov_genai.VLMPipeline(str(path), LLM_DEVICE)
-            if kind == "vlm"
-            else ov_genai.LLMPipeline(str(path), LLM_DEVICE)
-        )
-    _llm_id, _llm_kind = agent_id, kind
-    return _llm, kind
+    _llm = None
+    attempts = []
+    if kind == "vlm":
+        # NPU compiles this Gemma VLM (~1.7 GB blobs) but text-only decode is
+        # word salad. CPU produces real Italian/English chat. Keep NPU for LLMs.
+        attempts.append(("CPU", {}))
+        if "GPU" in _AVAILABLE:
+            attempts.append(("GPU", {}))
+    else:
+        npu_cfg = {**NPU_PIPELINE_CONFIG, "CACHE_DIR": str(cache)}
+        attempts.append((LLM_DEVICE, npu_cfg if LLM_DEVICE == "NPU" else {}))
+        if LLM_DEVICE == "NPU":
+            attempts.append(("NPU", {}))
+    last = None
+    for dev, extra in attempts:
+        try:
+            print(f"Loading {agent_id} on {dev} ({kind})")
+            if kind == "vlm":
+                _llm = ov_genai.VLMPipeline(str(path), dev, **extra)
+            elif extra:
+                _llm = ov_genai.LLMPipeline(str(path), dev, extra)
+            else:
+                _llm = ov_genai.LLMPipeline(str(path), dev)
+            _llm_id, _llm_kind, _llm_device = agent_id, kind, dev
+            return _llm, kind
+        except Exception as exc:
+            last = exc
+            print(f"{agent_id} {dev} failed: {exc}")
+            _llm = None
+    raise RuntimeError(f"{agent_id} failed: {last}")
 
 
 def _load_voice(name):
@@ -173,24 +181,10 @@ def transcribe(wav_bytes: bytes) -> str:
     return str(text).strip()
 
 
-_END = re.compile(r"[.!?。？！…][\"'”’)]*$")
-
-
 def _short(text: str) -> str:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+    text = re.split(r"<end_of_turn>|<start_of_turn>", text, maxsplit=1)[0].strip()
     return text
-
-
-def _complete(text: str, truncated: bool) -> str:
-    text = _short(text)
-    if not text:
-        return text
-    if not truncated and _END.search(text):
-        return text
-    last = max(text.rfind(ch) for ch in ".!?。？！…")
-    if last >= 8:
-        return text[: last + 1].rstrip()
-    return text.rstrip(",;:—- ") + "."
 
 
 def _from_result(result) -> tuple[str, bool]:
@@ -202,70 +196,38 @@ def _from_result(result) -> tuple[str, bool]:
     return str(text), truncated
 
 
-def _trim_history(raw) -> list[dict]:
-    """Last few turns only. Drop oldest until the char budget fits."""
-    turns = []
-    if not isinstance(raw, list):
-        return turns
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        role = item.get("role")
-        content = str(item.get("content") or "").strip()
-        if role not in ("user", "assistant") or not content:
-            continue
-        turns.append({"role": role, "content": content[:800]})
-    turns = turns[-(HISTORY_TURNS * 2) :]
-    while turns and turns[0]["role"] != "user":
-        turns.pop(0)
-    while turns and sum(len(m["content"]) for m in turns) > HISTORY_CHARS:
-        turns.pop(0)
-        while turns and turns[0]["role"] != "user":
-            turns.pop(0)
-    return turns
-
-
-def _system_prompt(max_new_tokens: int, persona: str) -> str:
-    budget = budget_prompt(max_new_tokens)
-    who = (persona or "").strip()[:PERSONA_CHARS]
-    if not who:
-        return budget
-    return f"{who} {budget}"
-
-
-def generate_text(
-    agent_id: str,
-    user_text: str,
-    max_new_tokens: int,
-    persona: str = "",
-    past: list | None = None,
-) -> str:
-    pipe, kind = _load_llm(agent_id)
-    cfg = ov_genai.GenerationConfig(max_new_tokens=max_new_tokens)
-    prompt = _system_prompt(max_new_tokens, persona)
-    prior = _trim_history(past)
+def _gen_cfg(pipe, kind: str, max_new_tokens: int) -> ov_genai.GenerationConfig:
     if kind == "vlm":
         try:
-            pipe.start_chat()
-            blob = prompt + "\n"
-            for m in prior:
-                blob += f"{m['role']}: {m['content']}\n"
-            blob += user_text
-            text, cut = _from_result(pipe.generate(blob, cfg))
-            return _complete(text, cut)
-        finally:
-            try:
-                pipe.finish_chat()
-            except Exception:
-                pass
-    messages = [{"role": "system", "content": prompt}, *prior, {"role": "user", "content": user_text}]
-    history = ov_genai.ChatHistory(messages)
+            cfg = pipe.get_generation_config()
+        except Exception:
+            cfg = ov_genai.GenerationConfig()
+        cfg.max_new_tokens = max_new_tokens
+        cfg.do_sample = True
+        cfg.top_k = 64
+        cfg.top_p = 0.95
+        try:
+            cfg.stop_strings = {"<end_of_turn>", "<start_of_turn>"}
+        except Exception:
+            pass
+        return cfg
+    return ov_genai.GenerationConfig(max_new_tokens=max_new_tokens)
+
+
+def generate_text(agent_id: str, user_text: str, max_new_tokens: int) -> str:
+    """One user turn. No system prompt, no history. The token box is the only cap."""
+    pipe, kind = _load_llm(agent_id)
+    cfg = _gen_cfg(pipe, kind, max_new_tokens)
+    if kind == "vlm":
+        text, _cut = _from_result(pipe.generate(user_text, generation_config=cfg))
+        return _short(text)
+    history = ov_genai.ChatHistory([{"role": "user", "content": user_text}])
     try:
         history.set_extra_context({"enable_thinking": False})
     except Exception:
         pass
-    text, cut = _from_result(pipe.generate(history, cfg))
-    return _complete(text, cut)
+    text, _cut = _from_result(pipe.generate(history, generation_config=cfg))
+    return _short(text)
 
 
 def synthesize(engine: str, voice_name: str, text: str, speaker_id: int | None) -> tuple[int, np.ndarray]:
@@ -367,7 +329,13 @@ def state():
     agents = []
     for spec in NPU_MODELS:
         name = spec["hf_id"].split("/")[-1]
-        agents.append({"id": name, "label": spec["label"], "ready": name in ready})
+        agents.append({
+            "id": name,
+            "label": spec["label"],
+            "ready": name in ready,
+            "note": spec.get("note", ""),
+            "kind": spec.get("kind", "llm"),
+        })
     for p in sorted(MODELS_NPU.glob("*")):
         if p.is_dir() and p.name not in {s["hf_id"].split("/")[-1] for s in NPU_MODELS}:
             agents.append({"id": p.name, "label": p.name, "ready": True})
@@ -378,10 +346,7 @@ def state():
         "default_agent": DEFAULT_AGENT if DEFAULT_AGENT in ready else (next(iter(ready), DEFAULT_AGENT)),
         "default_voice": DEFAULT_VOICE,
         "default_tokens": MAX_NEW_TOKENS,
-        "default_tts": "piper",
-        "default_kokoro": DEFAULT_KOKORO_VOICE,
-        "personas": PERSONAS,
-        "history_turns": HISTORY_TURNS,
+        "loaded": _llm_id or "",
         "agents": agents,
         "tts": [
             {
@@ -409,15 +374,9 @@ async def talk(
     tts: str = Form("piper"),
     tokens: int = Form(MAX_NEW_TOKENS),
     text: str = Form(""),
-    persona: str = Form(""),
-    history: str = Form("[]"),
     audio: UploadFile | None = File(None),
 ):
-    tokens = max(16, min(512, int(tokens or MAX_NEW_TOKENS)))
-    try:
-        past = json.loads(history or "[]")
-    except json.JSONDecodeError:
-        past = []
+    tokens = max(16, min(2048, int(tokens or MAX_NEW_TOKENS)))
     with _lock:
         heard = ""
         if audio is not None:
@@ -432,7 +391,7 @@ async def talk(
             return JSONResponse({"error": "type or record something"}, 400)
         t_llm = time.perf_counter()
         try:
-            reply = generate_text(agent, user, tokens, persona, past)
+            reply = generate_text(agent, user, tokens)
         except Exception as exc:
             return JSONResponse({"heard": user, "error": f"LLM: {exc}"}, 500)
         llm_s = time.perf_counter() - t_llm
@@ -454,7 +413,7 @@ async def talk(
                     "audio": "",
                     "status": f"text ok, tts failed: {exc}",
                 }
-        bits = [f"ok · llm {LLM_DEVICE} {llm_s:.1f}s"]
+        bits = [f"ok · llm {_llm_device or LLM_DEVICE} {llm_s:.1f}s"]
         if heard:
             bits.append(f"stt {STT_DEVICE}")
         if engine:
@@ -462,9 +421,38 @@ async def talk(
         return {
             "heard": user,
             "reply": reply,
+            "agent": _llm_id or agent,
+            "device": _llm_device or LLM_DEVICE,
             "audio": b64,
             "status": " · ".join(bits),
         }
+
+
+@app.post("/api/speak")
+async def speak(
+    text: str = Form(""),
+    voice: str = Form(""),
+    speaker: int = Form(0),
+    tts: str = Form("piper"),
+):
+    phrase = (text or "").strip()
+    if not phrase:
+        return JSONResponse({"error": "empty text"}, 400)
+    with _lock:
+        try:
+            engine = tts if tts in ("piper", "kokoro") else "piper"
+            t0 = time.perf_counter()
+            rate, wav = synthesize(engine, voice, phrase, speaker)
+            tts_s = time.perf_counter() - t0
+            if not wav.size:
+                return JSONResponse({"error": "tts produced no audio"}, 500)
+            dev = TTS_DEVICE if engine == "kokoro" else "cpu"
+            return {
+                "audio": _wav_b64(rate, wav),
+                "status": f"ok · {engine} {dev} {tts_s:.1f}s",
+            }
+        except Exception as exc:
+            return JSONResponse({"error": f"tts failed: {exc}"}, 500)
 
 
 if __name__ == "__main__":
