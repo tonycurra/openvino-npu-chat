@@ -37,13 +37,20 @@ Each send is one user turn. No system prompt, no history. Gemma 3 is text-only o
 
 ## Downloads (once)
 
+Weights are not in git. `scripts/download.py` fetches them:
+
 ```bash
 .venv/bin/python scripts/download.py            # NPU LLMs, Whisper, Piper, Kokoro
 .venv/bin/python scripts/download.py kokoro     # just Kokoro if TTS is missing
 .venv/bin/python scripts/download.py models     # just the NPU collection
 ```
 
-Hugging Face is only used for these fetches. Convert a *new* Hugging Face LLM for NPU: [docs/npu-export.md](docs/npu-export.md). Talk already lists any extra folder you drop in `models/npu/`.
+- NPU LLMs: https://huggingface.co/collections/OpenVINO/llms-optimized-for-npu-686e7f0bf7bc184bd71f8ba0
+- Whisper: https://huggingface.co/OpenVINO/whisper-small-int8-ov
+- Kokoro: https://huggingface.co/luis-castillo/Kokoro-82M-OpenVINO-FP16-OVMS
+- Piper voices: https://huggingface.co/rhasspy/piper-voices
+
+The model ids `download.py` uses are in `config.py`. Convert a new Hugging Face LLM for NPU: [docs/npu-export.md](docs/npu-export.md). Talk already lists any extra folder you drop in `models/npu/`.
 
 ## Layout
 
