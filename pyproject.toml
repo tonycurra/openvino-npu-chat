@@ -5,7 +5,7 @@ description = "Local chat and an OpenAI-compatible API on an Intel NPU, using Op
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "tony", email = "mail@tonycurra.dev" }]
+authors = [{ name = "tony", email = "tonycurra@proton.me" }]
 keywords = ["openvino", "npu", "llm", "zed"]
 classifiers = [
     "License :: OSI Approved :: MIT License",
