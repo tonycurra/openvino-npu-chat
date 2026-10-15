@@ -1,5 +1,5 @@
 [project]
-name = "npu-talk"
+name = "openvino-npu-chat"
 version = "0.1.0"
 description = "Local chat and an OpenAI-compatible API on an Intel NPU, using OpenVINO."
 readme = "README.md"

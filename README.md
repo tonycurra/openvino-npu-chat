@@ -2,7 +2,7 @@
 
 Local chat on an Intel NPU, plus an OpenAI-compatible API for [Zed](https://zed.dev). Speech recognition and speech synthesis sit on the same chat server. Model weights are downloaded onto the machine and are not part of this repository.
 
-[![test](https://github.com/tonycurra/npu-talk/actions/workflows/test.yml/badge.svg)](https://github.com/tonycurra/npu-talk/actions/workflows/test.yml)
+[![test](https://github.com/tonycurra/openvino-npu-chat/actions/workflows/test.yml/badge.svg)](https://github.com/tonycurra/openvino-npu-chat/actions/workflows/test.yml)
 
 Inference stays on the computer that runs the server. Both processes bind to `127.0.0.1` and do not check an API key, so leave them off a public interface.
 
@@ -10,7 +10,7 @@ The NPU holds one language model. Stop the chat server before starting the Zed s
 
 ## What you get
 
-- A browser UI at <http://127.0.0.1:7860> for a single-turn chat against any OpenVINO GenAI model in `models/npu/`.
+- A browser UI at <http://127.0.0.1:7860> for chat against any OpenVINO GenAI model in `models/npu/`. The page keeps the last four exchanges and sends them with the next message.
 - An OpenAI-compatible API at <http://127.0.0.1:8000/v1> that serves Qwen3 8B, including tool calls, for Zed.
 - Whisper speech-to-text, plus Piper and Kokoro voices on the same page. The speaker control speaks the reply. The microphone transcribes a recording into that turn.
 
@@ -49,7 +49,7 @@ Gemma 3 is gated. Accept the license on the [model card](https://huggingface.co/
 
 Open <http://127.0.0.1:7860>.
 
-The header lists models already on disk. The number beside the model is the maximum count of new tokens (16–2048). Each send is one user turn, and the server does not store the transcript. The first NPU compile for a model is slow. Later starts reuse `.npucache/`.
+The header lists models already on disk. The number beside the model is the maximum count of new tokens (16–2048). The page remembers the last four exchanges in the browser, trimmed to fit the 1024-token NPU prompt. **clear** forgets them. A reload does too. The server does not write the transcript to disk. The first NPU compile for a model is slow. Later starts reuse `.npucache/`.
 
 ### Speech
 

@@ -118,6 +118,11 @@ NPU_PIPELINE_CONFIG = {
 
 MAX_NEW_TOKENS = 256
 
+# Last few exchanges, kept by the browser and sent with the next turn.
+# The compiled NPU prompt is 1024 tokens, so this stays short.
+HISTORY_TURNS = 4
+HISTORY_CHARS = 1400
+
 
 def model_dir(hf_id: str) -> Path:
     return MODELS_NPU / hf_id.split("/")[-1]

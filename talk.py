@@ -29,6 +29,8 @@ from config import (
     DEFAULT_AGENT,
     DEFAULT_KOKORO_VOICE,
     DEFAULT_VOICE,
+    HISTORY_CHARS,
+    HISTORY_TURNS,
     KOKORO_DIR,
     MAX_NEW_TOKENS,
     MODELS_NPU,
@@ -215,14 +217,40 @@ def _gen_cfg(pipe, kind: str, max_new_tokens: int) -> ov_genai.GenerationConfig:
     return ov_genai.GenerationConfig(max_new_tokens=max_new_tokens)
 
 
-def generate_text(agent_id: str, user_text: str, max_new_tokens: int) -> str:
-    """One user turn. No system prompt, no history. The token box is the only cap."""
+def _trim_history(raw) -> list[dict]:
+    """Keep the newest turns that fit the NPU prompt budget."""
+    turns = []
+    if not isinstance(raw, list):
+        return turns
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        content = str(item.get("content") or "").strip()
+        if role not in ("user", "assistant") or not content:
+            continue
+        turns.append({"role": role, "content": content[:500]})
+    turns = turns[-(HISTORY_TURNS * 2):]
+    while turns and turns[0]["role"] != "user":
+        turns.pop(0)
+    while turns and sum(len(m["content"]) for m in turns) > HISTORY_CHARS:
+        turns.pop(0)
+        while turns and turns[0]["role"] != "user":
+            turns.pop(0)
+    return turns
+
+
+def generate_text(agent_id: str, user_text: str, max_new_tokens: int, past: list | None = None) -> str:
+    """This turn plus the few exchanges the page still has. Nothing is stored on disk."""
     pipe, kind = _load_llm(agent_id)
     cfg = _gen_cfg(pipe, kind, max_new_tokens)
+    prior = _trim_history(past)
     if kind == "vlm":
-        text, _cut = _from_result(pipe.generate(user_text, generation_config=cfg))
+        lines = [f"{m['role']}: {m['content']}" for m in prior]
+        blob = ("\n".join(lines) + "\n" + user_text) if lines else user_text
+        text, _cut = _from_result(pipe.generate(blob, generation_config=cfg))
         return _short(text)
-    history = ov_genai.ChatHistory([{"role": "user", "content": user_text}])
+    history = ov_genai.ChatHistory([*prior, {"role": "user", "content": user_text}])
     try:
         history.set_extra_context({"enable_thinking": False})
     except Exception:
@@ -349,6 +377,7 @@ def state():
         "default_kokoro": DEFAULT_KOKORO_VOICE,
         "default_tts": "kokoro" if kokoro_ready() else "piper",
         "default_tokens": MAX_NEW_TOKENS,
+        "history_turns": HISTORY_TURNS,
         "loaded": _llm_id or "",
         "agents": agents,
         "tts": [
@@ -377,6 +406,7 @@ async def talk(
     tts: str = Form("piper"),
     tokens: int = Form(MAX_NEW_TOKENS),
     text: str = Form(""),
+    history: str = Form("[]"),
     audio: UploadFile | None = File(None),
 ):
     tokens = max(16, min(2048, int(tokens or MAX_NEW_TOKENS)))
@@ -392,9 +422,13 @@ async def talk(
         user = (text or "").strip() or heard
         if not user:
             return JSONResponse({"error": "type or record something"}, 400)
+        try:
+            past = json.loads(history or "[]")
+        except json.JSONDecodeError:
+            past = []
         t_llm = time.perf_counter()
         try:
-            reply = generate_text(agent, user, tokens)
+            reply = generate_text(agent, user, tokens, past)
         except Exception as exc:
             return JSONResponse({"heard": user, "error": f"LLM: {exc}"}, 500)
         llm_s = time.perf_counter() - t_llm

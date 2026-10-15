@@ -49,6 +49,7 @@
   <select id="voice" title="voice" aria-label="voice"></select>
   <input id="speaker" type="number" min="0" value="0" title="speaker" aria-label="speaker" hidden>
   <button id="speak" type="button" aria-pressed="false">speak</button>
+  <button id="clear" type="button" title="forget this conversation">clear</button>
   <span id="note"></span>
 </header>
 <main id="log"></main>
@@ -60,7 +61,7 @@
 <audio id="out"></audio>
 <script>
 const $ = id => document.getElementById(id);
-let state = {}, busy = false, sound = false, playing = false, rec = null;
+let state = {}, busy = false, sound = false, playing = false, rec = null, past = [];
 
 function line(text, cls) {
   const d = document.createElement("div");
@@ -117,11 +118,25 @@ function paintSpeak() {
   $("speaker").max = Math.max(0, speakers - 1);
 }
 
+function remember(user, reply) {
+  if (user) past.push({ role: "user", content: user });
+  if (reply) past.push({ role: "assistant", content: reply });
+  const n = (state.history_turns || 4) * 2;
+  if (past.length > n) past = past.slice(-n);
+}
+
+function resetChat() {
+  past = [];
+  stopAudio();
+  $("log").innerHTML = "";
+}
+
 function setBusy(on) {
   busy = on;
   $("send").disabled = on;
   $("mic").disabled = on && !rec;
   $("agent").disabled = on;
+  $("clear").disabled = on;
   $("tts").disabled = on;
   $("voice").disabled = on;
 }
@@ -231,6 +246,7 @@ async function send(audioBlob) {
   fd.append("agent", agent);
   fd.append("tokens", $("tokens").value);
   fd.append("text", text);
+  fd.append("history", JSON.stringify(past));
   fd.append("speak", sound ? "1" : "0");
   fd.append("tts", $("tts").value);
   fd.append("voice", $("voice").value);
@@ -254,6 +270,7 @@ async function send(audioBlob) {
     w.textContent = (j.agent || label) + (j.device ? " · " + j.device : "") + (j.status ? " · " + j.status.replace(/^ok · /, "") : "");
     wait.appendChild(w);
     wait.appendChild(document.createTextNode(j.reply || ""));
+    remember(j.heard || text, j.reply || "");
     if (j.audio) playAudio(j.audio);
   } catch (e) {
     wait.textContent = String(e);
@@ -264,6 +281,7 @@ async function send(audioBlob) {
   }
 }
 
+$("clear").onclick = resetChat;
 $("speak").onclick = () => {
   if (playing) { stopAudio(); return; }
   sound = !sound;

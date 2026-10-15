@@ -67,6 +67,26 @@ def test_voice_meta_reads_speaker_count(tmp_path):
     assert talk._voice_meta(voice) == {"id": "en_GB-alba-medium", "speakers": 3}
 
 
+def test_trim_history_keeps_the_newest_pairs_that_fit():
+    long = "x" * 800
+    raw = [{"role": "note", "content": "skip"}]
+    for i in range(6):
+        raw.append({"role": "user", "content": f"q{i} {long}"})
+        raw.append({"role": "assistant", "content": f"a{i} {long}"})
+    kept = talk._trim_history(raw)
+    assert kept
+    assert kept[0]["role"] == "user"
+    assert all(m["role"] in {"user", "assistant"} for m in kept)
+    assert len(kept) <= talk.HISTORY_TURNS * 2
+    assert sum(len(m["content"]) for m in kept) <= talk.HISTORY_CHARS
+    assert "q5" in kept[-2]["content"]
+
+
+def test_trim_history_rejects_junk():
+    assert talk._trim_history(None) == []
+    assert talk._trim_history(["nope", {"role": "tool", "content": "x"}]) == []
+
+
 def test_transcribe_skips_clips_shorter_than_a_tenth_of_a_second():
     short = np.zeros(100, dtype=np.float32)
     raw = base64.b64decode(talk._wav_b64(16000, short))
@@ -84,6 +104,7 @@ def test_index_is_the_chat_page():
     assert 'id="tts"' in response.text
     assert 'id="voice"' in response.text
     assert 'id="mic"' in response.text
+    assert 'id="clear"' in response.text
 
 
 def test_state_lists_devices_and_engines():
