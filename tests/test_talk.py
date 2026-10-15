@@ -81,6 +81,9 @@ def test_index_is_the_chat_page():
     assert response.status_code == 200
     assert "NPU Talk" in response.text
     assert 'id="agent"' in response.text
+    assert 'id="tts"' in response.text
+    assert 'id="voice"' in response.text
+    assert 'id="mic"' in response.text
 
 
 def test_state_lists_devices_and_engines():
@@ -88,6 +91,8 @@ def test_state_lists_devices_and_engines():
     assert body["llm_device"] in {"NPU", "GPU", "CPU"}
     assert isinstance(body["agents"], list)
     assert {engine["id"] for engine in body["tts"]} == {"piper", "kokoro"}
+    assert body["default_tts"] in {"piper", "kokoro"}
+    assert body["default_kokoro"]
     for agent in body["agents"]:
         assert {"id", "label", "ready"} <= set(agent)
 

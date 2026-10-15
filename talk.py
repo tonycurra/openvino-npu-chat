@@ -27,6 +27,7 @@ from piper import PiperVoice, SynthesisConfig
 
 from config import (
     DEFAULT_AGENT,
+    DEFAULT_KOKORO_VOICE,
     DEFAULT_VOICE,
     KOKORO_DIR,
     MAX_NEW_TOKENS,
@@ -345,6 +346,8 @@ def state():
         "whisper": (WHISPER_DIR / "openvino_encoder_model.xml").exists(),
         "default_agent": DEFAULT_AGENT if DEFAULT_AGENT in ready else (next(iter(ready), DEFAULT_AGENT)),
         "default_voice": DEFAULT_VOICE,
+        "default_kokoro": DEFAULT_KOKORO_VOICE,
+        "default_tts": "kokoro" if kokoro_ready() else "piper",
         "default_tokens": MAX_NEW_TOKENS,
         "loaded": _llm_id or "",
         "agents": agents,

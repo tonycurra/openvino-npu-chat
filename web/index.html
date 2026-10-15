@@ -8,7 +8,7 @@
   html, body { margin: 0; height: 100%; background: #000; color: #eee; }
   body { font: 15px/1.45 system-ui, sans-serif; display: flex; flex-direction: column; }
   header, footer { display: flex; gap: .5rem; align-items: center; padding: .55rem .8rem; flex-shrink: 0; }
-  header { border-bottom: 1px solid #222; }
+  header { border-bottom: 1px solid #222; flex-wrap: wrap; }
   footer { border-top: 1px solid #222; align-items: flex-end; }
   #brand { font-size: .8rem; letter-spacing: .04em; color: #aaa; margin-right: .3rem; }
   header select, header input, #in {
@@ -17,8 +17,11 @@
   header select:focus, header input:focus, #in:focus, button:focus-visible {
     outline: 1px solid #888; outline-offset: 1px;
   }
-  #agent { flex: 1; max-width: 28rem; }
+  #agent { flex: 1; min-width: 12rem; max-width: 22rem; }
   #tokens { width: 5rem; }
+  #tts { width: 6.5rem; }
+  #voice { max-width: 14rem; }
+  #speaker { width: 4rem; }
   #note { margin-left: auto; color: #666; font-size: .75rem; }
   #log { flex: 1; overflow: auto; padding: 1rem .8rem 2rem; display: flex; flex-direction: column; gap: .8rem; }
   .msg { max-width: 42rem; white-space: pre-wrap; }
@@ -32,6 +35,9 @@
     font: inherit; cursor: pointer;
   }
   button:disabled { opacity: .35; cursor: default; }
+  #speak.on { border-color: #6c8; color: #6c8; }
+  #mic.rec { border-color: #c55; color: #c55; }
+  audio { display: none; }
 </style>
 </head>
 <body>
@@ -39,16 +45,22 @@
   <span id="brand">NPU Talk</span>
   <select id="agent" title="model" aria-label="model"></select>
   <input id="tokens" type="number" min="16" max="2048" step="16" value="128" title="max new tokens" aria-label="max new tokens">
+  <select id="tts" title="speech engine" aria-label="speech engine"></select>
+  <select id="voice" title="voice" aria-label="voice"></select>
+  <input id="speaker" type="number" min="0" value="0" title="speaker" aria-label="speaker" hidden>
+  <button id="speak" type="button" aria-pressed="false">speak</button>
   <span id="note"></span>
 </header>
 <main id="log"></main>
 <footer>
   <textarea id="in" rows="1" placeholder="message"></textarea>
+  <button id="mic" type="button" title="record">mic</button>
   <button id="send" type="button">send</button>
 </footer>
+<audio id="out"></audio>
 <script>
 const $ = id => document.getElementById(id);
-let state = {}, busy = false;
+let state = {}, busy = false, sound = false, playing = false, rec = null;
 
 function line(text, cls) {
   const d = document.createElement("div");
@@ -74,10 +86,62 @@ function bot(text, who) {
   return d;
 }
 
+function engine() {
+  return (state.tts || []).find(e => e.id === $("tts").value) || null;
+}
+
+function fillVoices() {
+  const eng = engine();
+  $("voice").innerHTML = "";
+  if (!eng) return;
+  const prefer = eng.id === "kokoro" ? state.default_kokoro : state.default_voice;
+  const saved = localStorage.voice && localStorage.voiceEngine === eng.id ? localStorage.voice : prefer;
+  for (const v of eng.voices || []) {
+    const o = document.createElement("option");
+    o.value = v.id;
+    o.textContent = v.lang ? v.id + " · " + v.lang : v.id;
+    if (v.id === saved) o.selected = true;
+    $("voice").appendChild(o);
+  }
+  paintSpeak();
+}
+
+function paintSpeak() {
+  $("speak").classList.toggle("on", sound);
+  $("speak").setAttribute("aria-pressed", sound ? "true" : "false");
+  $("speak").textContent = playing ? "stop" : "speak";
+  const eng = engine();
+  const voice = eng && (eng.voices || []).find(v => v.id === $("voice").value);
+  const speakers = voice ? voice.speakers : 1;
+  $("speaker").hidden = speakers <= 1;
+  $("speaker").max = Math.max(0, speakers - 1);
+}
+
 function setBusy(on) {
   busy = on;
   $("send").disabled = on;
+  $("mic").disabled = on && !rec;
   $("agent").disabled = on;
+  $("tts").disabled = on;
+  $("voice").disabled = on;
+}
+
+function stopAudio() {
+  const a = $("out");
+  a.pause();
+  a.removeAttribute("src");
+  a.load();
+  playing = false;
+  paintSpeak();
+}
+
+function playAudio(b64) {
+  const a = $("out");
+  stopAudio();
+  a.src = "data:audio/wav;base64," + b64;
+  playing = true;
+  paintSpeak();
+  a.play().catch(() => { playing = false; paintSpeak(); });
 }
 
 async function boot() {
@@ -90,28 +154,95 @@ async function boot() {
     if (a.id === state.default_agent) o.selected = true;
     $("agent").appendChild(o);
   }
+  for (const e of state.tts || []) {
+    const o = document.createElement("option");
+    o.value = e.id;
+    o.textContent = e.ready ? e.label : e.label + " (missing)";
+    o.disabled = !e.ready;
+    $("tts").appendChild(o);
+  }
+  const savedEngine = localStorage.tts || state.default_tts;
+  if ([...$("tts").options].some(o => o.value === savedEngine && !o.disabled)) $("tts").value = savedEngine;
+  fillVoices();
   if (state.default_tokens) $("tokens").value = state.default_tokens;
-  $("note").textContent = "llm " + state.llm_device;
+  sound = localStorage.sound === "1";
+  paintSpeak();
+  const bits = ["llm " + state.llm_device];
+  if (state.whisper) bits.push("stt " + state.stt_device);
+  $("note").textContent = bits.join(" · ");
+  $("mic").hidden = !state.whisper;
+  if (!state.whisper) line("no whisper on disk — type for now", "sys");
   if (!$("agent").options.length) line("no llm on disk", "sys");
 }
 
-async function send() {
+function encodeWav(pcm, sr) {
+  const buf = new ArrayBuffer(44 + pcm.length * 2);
+  const view = new DataView(buf);
+  const write = (i, s) => { for (let k = 0; k < s.length; k++) view.setUint8(i + k, s.charCodeAt(k)); };
+  write(0, "RIFF"); view.setUint32(4, 36 + pcm.length * 2, true); write(8, "WAVE");
+  write(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, sr, true); view.setUint32(28, sr * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  write(36, "data"); view.setUint32(40, pcm.length * 2, true);
+  let p = 44;
+  for (let i = 0; i < pcm.length; i++, p += 2) {
+    const s = Math.max(-1, Math.min(1, pcm[i]));
+    view.setInt16(p, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+async function startMic() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const ctx = new AudioContext();
+  const sr = ctx.sampleRate;
+  const src = ctx.createMediaStreamSource(stream);
+  const proc = ctx.createScriptProcessor(4096, 1, 1);
+  const data = [];
+  proc.onaudioprocess = e => data.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  src.connect(proc);
+  proc.connect(ctx.destination);
+  return {
+    async stop() {
+      proc.disconnect();
+      src.disconnect();
+      stream.getTracks().forEach(t => t.stop());
+      await ctx.close();
+      const n = data.reduce((a, b) => a + b.length, 0);
+      const pcm = new Float32Array(n);
+      let o = 0;
+      for (const chunk of data) { pcm.set(chunk, o); o += chunk.length; }
+      return encodeWav(pcm, sr);
+    }
+  };
+}
+
+async function send(audioBlob) {
   const text = $("in").value.trim();
-  if (!text || busy) return;
+  if ((!text && !audioBlob) || busy) return;
   const agent = $("agent").value;
-  const label = $("agent").selectedOptions[0].textContent;
+  const label = $("agent").selectedOptions[0] ? $("agent").selectedOptions[0].textContent : agent;
+  stopAudio();
   $("in").value = "";
-  line(text, "me");
+  const mine = text ? line(text, "me") : line("…", "me");
+  if (!text) mine.dataset.pending = "1";
   const wait = bot("…", label);
   setBusy(true);
   const fd = new FormData();
   fd.append("agent", agent);
   fd.append("tokens", $("tokens").value);
   fd.append("text", text);
-  fd.append("speak", "0");
+  fd.append("speak", sound ? "1" : "0");
+  fd.append("tts", $("tts").value);
+  fd.append("voice", $("voice").value);
+  fd.append("speaker", $("speaker").value || "0");
+  if (audioBlob) fd.append("audio", audioBlob, "in.wav");
   try {
     const r = await fetch("/api/talk", { method: "POST", body: fd });
     const j = await r.json();
+    if (j.heard && mine.dataset.pending) {
+      mine.textContent = j.heard;
+      delete mine.dataset.pending;
+    }
     if (!r.ok) {
       wait.textContent = j.error || "error";
       wait.className = "msg sys";
@@ -123,6 +254,7 @@ async function send() {
     w.textContent = (j.agent || label) + (j.device ? " · " + j.device : "") + (j.status ? " · " + j.status.replace(/^ok · /, "") : "");
     wait.appendChild(w);
     wait.appendChild(document.createTextNode(j.reply || ""));
+    if (j.audio) playAudio(j.audio);
   } catch (e) {
     wait.textContent = String(e);
     wait.className = "msg sys";
@@ -132,10 +264,45 @@ async function send() {
   }
 }
 
-$("send").onclick = send;
+$("speak").onclick = () => {
+  if (playing) { stopAudio(); return; }
+  sound = !sound;
+  localStorage.sound = sound ? "1" : "0";
+  paintSpeak();
+};
+$("tts").onchange = () => {
+  localStorage.tts = $("tts").value;
+  fillVoices();
+};
+$("voice").onchange = () => {
+  localStorage.voice = $("voice").value;
+  localStorage.voiceEngine = $("tts").value;
+  paintSpeak();
+};
+$("out").onended = () => { playing = false; paintSpeak(); };
+$("send").onclick = () => send(null);
 $("in").addEventListener("keydown", e => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(null); }
 });
+$("mic").onclick = async () => {
+  if (rec) {
+    const blob = await rec.stop();
+    rec = null;
+    $("mic").classList.remove("rec");
+    $("mic").textContent = "mic";
+    await send(blob);
+    return;
+  }
+  if (busy) return;
+  try {
+    rec = await startMic();
+  } catch (e) {
+    line(String(e), "sys");
+    return;
+  }
+  $("mic").classList.add("rec");
+  $("mic").textContent = "stop";
+};
 boot();
 </script>
 </body>

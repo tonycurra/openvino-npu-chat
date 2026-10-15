@@ -12,7 +12,7 @@ The NPU holds one language model. Stop the chat server before starting the Zed s
 
 - A browser UI at <http://127.0.0.1:7860> for a single-turn chat against any OpenVINO GenAI model in `models/npu/`.
 - An OpenAI-compatible API at <http://127.0.0.1:8000/v1> that serves Qwen3 8B, including tool calls, for Zed.
-- Whisper speech-to-text, Piper voices, and Kokoro speech synthesis on the chat server's HTTP API.
+- Whisper speech-to-text, plus Piper and Kokoro voices on the same page. The speaker control speaks the reply. The microphone transcribes a recording into that turn.
 
 ## Requirements
 
@@ -51,9 +51,11 @@ Open <http://127.0.0.1:7860>.
 
 The header lists models already on disk. The number beside the model is the maximum count of new tokens (16–2048). Each send is one user turn, and the server does not store the transcript. The first NPU compile for a model is slow. Later starts reuse `.npucache/`.
 
-### Speech API
+### Speech
 
-The page is text. Recordings and spoken replies go through the HTTP API on the same port:
+The header has a Piper / Kokoro menu and a voice menu. Turn on **speak** to hear the reply. Kokoro's first compile is slow; later replies reuse `.npucache/kokoro/`. The microphone appears when Whisper is on disk. Click it to record, click again to send that recording.
+
+The same routes are available without the page:
 
 - `GET /api/state` — devices, downloaded models, and voices.
 - `POST /api/talk` — form fields `agent`, `text`, `tokens`. Optional: `audio` (WAV), `speak=1`, `tts` (`piper` or `kokoro`), `voice`, `speaker`.
