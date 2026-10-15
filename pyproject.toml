@@ -1,0 +1,18 @@
+[project]
+name = "npu-talk"
+version = "0.1.0"
+description = "Local chat and an OpenAI-compatible API on an Intel NPU, using OpenVINO."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "tony", email = "mail@tonycurra.dev" }]
+keywords = ["openvino", "npu", "llm", "zed"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -2,7 +2,8 @@
 """Local NPU chat. One prompt, pick a model.
 
     .venv/bin/python talk.py
-    open http://127.0.0.1:7860
+
+Then open http://127.0.0.1:7860
 """
 
 from __future__ import annotations
@@ -26,7 +27,6 @@ from piper import PiperVoice, SynthesisConfig
 
 from config import (
     DEFAULT_AGENT,
-    DEFAULT_KOKORO_VOICE,
     DEFAULT_VOICE,
     KOKORO_DIR,
     MAX_NEW_TOKENS,

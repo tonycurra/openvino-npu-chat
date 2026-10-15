@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>talk</title>
+<title>NPU Talk</title>
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #000; color: #eee; }
@@ -10,12 +10,16 @@
   header, footer { display: flex; gap: .5rem; align-items: center; padding: .55rem .8rem; flex-shrink: 0; }
   header { border-bottom: 1px solid #222; }
   footer { border-top: 1px solid #222; align-items: flex-end; }
+  #brand { font-size: .8rem; letter-spacing: .04em; color: #aaa; margin-right: .3rem; }
   header select, header input, #in {
     background: #000; color: #eee; border: 1px solid #333; padding: .35rem .45rem; font: inherit;
   }
+  header select:focus, header input:focus, #in:focus, button:focus-visible {
+    outline: 1px solid #888; outline-offset: 1px;
+  }
   #agent { flex: 1; max-width: 28rem; }
   #tokens { width: 5rem; }
-  #note { margin-left: auto; color: #444; font-size: .75rem; }
+  #note { margin-left: auto; color: #666; font-size: .75rem; }
   #log { flex: 1; overflow: auto; padding: 1rem .8rem 2rem; display: flex; flex-direction: column; gap: .8rem; }
   .msg { max-width: 42rem; white-space: pre-wrap; }
   .me { align-self: flex-end; color: #fff; }
@@ -32,8 +36,9 @@
 </head>
 <body>
 <header>
-  <select id="agent" title="model"></select>
-  <input id="tokens" type="number" min="16" max="2048" step="16" value="128" title="max new tokens">
+  <span id="brand">NPU Talk</span>
+  <select id="agent" title="model" aria-label="model"></select>
+  <input id="tokens" type="number" min="16" max="2048" step="16" value="128" title="max new tokens" aria-label="max new tokens">
   <span id="note"></span>
 </header>
 <main id="log"></main>

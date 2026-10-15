@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download NPU LLMs, Whisper STT, Piper voices, and phonetic dictionaries."""
+"""Download NPU LLMs, Whisper, Kokoro, Piper voices, and phonetic dictionaries."""
 
 from __future__ import annotations
 

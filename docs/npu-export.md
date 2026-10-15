@@ -4,7 +4,7 @@ Short version: **you cannot take an arbitrary file and magically run it on the N
 
 Official reference: [OpenVINO GenAI on NPU](https://docs.openvino.ai/2026/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html). Ready-made weights: [LLMs optimized for NPU](https://huggingface.co/collections/OpenVINO/llms-optimized-for-npu-686e7f0bf7bc184bd71f8ba0).
 
-This machine already has GenAI **2026.3.1**. Export is **offline after the download**: Hugging Face is only used to fetch the original weights (and optionally a calibration set). Runtime stays local.
+This repo pins OpenVINO GenAI **2026.3.1**. Export is offline after the download: Hugging Face is only used to fetch the original weights (and, if you ask for it, a calibration set). Runtime stays on the machine that loads the IR.
 
 ---
 
@@ -16,8 +16,8 @@ This machine already has GenAI **2026.3.1**. Export is **offline after the downl
 | Common HF instruct LLM (Llama, Mistral, Phi, Qwen, Gemma) ≤ ~8B | Yes, `optimum-cli` + NPU flags. | 30–90 min first time (tools + export). |
 | Same, but 14B–32B | Maybe. RAM and first NPU **compile** hurt. | Hours, may OOM. |
 | GPTQ / already-INT4 HF repo | Often `optimum-cli export openvino -m …` with no extra flags. | Easier than FP16. |
-| Whisper | Yes, different flags (INT8, not INT4-CW). | Easy. We already use `whisper-small-int8-ov`. |
-| VLM (Gemma 3, etc.) | Same family of export; GenAI `VLMPipeline`. | Medium. Gemma 3 4B is on disk here (gated HF repo). |
+| Whisper | Yes, different flags (INT8, not the INT4-CW LLM recipe). | Easy. This repo uses `whisper-small-int8-ov`. |
+| VLM (Gemma 3, etc.) | Same family of export; GenAI `VLMPipeline`. | Medium. Gemma 3 4B is listed in `config.py` and the Hugging Face repo is gated. |
 | Diffusion / SD / Flux (image **generation**) | `Text2ImagePipeline`, usually **CPU/GPU**. NPU can take text-encoder; UNet often stays CPU. | Separate project. Not the NPU LLM recipe. |
 | Random `.gguf` / `.safetensors` custom arch / huge MoE | Often no. GenAI must know the topology. | Hard or impossible. |
 | Piper / Kokoro TTS | Not NPU LLMs. Piper is ONNX on CPU. Kokoro is GenAI speech on GPU/CPU so the NPU stays on chat. | Already local. |
@@ -42,13 +42,13 @@ Talk already sets `CACHE_DIR` under `.npucache/`.
 | Piece | Typical |
 |---|---|
 | RAM for export of a 7B–8B | **16 GB+** comfortable. 32 GB nicer. Docs: Series 2, **>16 GB** if you push long prompts on 7B+. |
-| Disk for one 7B INT4 | **~2–4.5 GB** IR (see `models/npu/` here). Plus Hugging Face cache of the original. |
+| Disk for one 7B INT4 | **~2–4.5 GB** IR under `models/npu/`. Plus the Hugging Face cache of the original weights. |
 | CPU time, data-free INT4-CW 7B | **~10–40 min** depending on CPU. |
 | Extra: `--awq --scale-estimation --dataset wikitext2` | **+30–90 min**, downloads WikiText, better accuracy. |
 | First NPU compile 7B–8B | **several minutes** (once). |
 | Tools | Separate venv recommended (Optimum pins Transformers; talk’s venv should stay GenAI-runtime). |
 
-You do **not** need a GPU for the NPU recipe. A GPU only helps if you also export/run diffusion on iGPU.
+The NPU recipe itself runs the export on CPU. A GPU matters when you also export or run a diffusion model on the iGPU.
 
 ---
 
@@ -71,7 +71,7 @@ Use a **throwaway venv** so Optimum does not fight the talk runtime. Pins change
 python3 -m venv ~/venvs/ov-export
 source ~/venvs/ov-export/bin/activate
 pip install -U pip
-# pins move every OpenVINO minor — this laptop is GenAI 2026.3.1
+# pins move every OpenVINO minor — these match GenAI 2026.3.1
 pip install nncf onnx optimum-intel transformers
 pip install openvino openvino-tokenizers openvino-genai
 ```
@@ -82,7 +82,7 @@ pip install openvino openvino-tokenizers openvino-genai
 optimum-cli export openvino \
   -m Qwen/Qwen2.5-7B-Instruct \
   --weight-format int4 --sym --ratio 1.0 --group-size -1 \
-  /home/t/code/openvino/models/npu/Qwen2.5-7B-Instruct-int4-cw-ov
+  models/npu/Qwen2.5-7B-Instruct-int4-cw-ov
 ```
 
 **Smaller models (≤ ~4–5B)** can use group-128:
@@ -91,7 +91,7 @@ optimum-cli export openvino \
 optimum-cli export openvino \
   -m microsoft/Phi-3.5-mini-instruct \
   --weight-format int4 --sym --ratio 1.0 --group-size 128 \
-  /home/t/code/openvino/models/npu/Phi-3.5-mini-instruct-int4-gq-ov
+  models/npu/Phi-3.5-mini-instruct-int4-gq-ov
 ```
 
 `--group-size -1` means channel-wise. **Not** `1`.
@@ -163,4 +163,4 @@ That is **not** converting a chat LLM. You export a **diffuser** (`--library dif
 4. First NPU generate once; keep `.npucache/`.
 5. Point talk at `models/npu/<folder>` (automatic if the bin is there).
 
-For this laptop, **download-first is the low-effort path**. Convert yourself when you want a model Intel has not packaged — a supported 7B instruct is doable in one sitting; “literally any weights” is not.
+**Download-first is the low-effort path.** Convert a model when Intel has not packaged it. A supported 7B instruct model is a one-sitting job. Arbitrary weights are not.

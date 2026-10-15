@@ -118,38 +118,6 @@ NPU_PIPELINE_CONFIG = {
 
 MAX_NEW_TOKENS = 256
 
-# Rolling chat: last N user/assistant pairs. NPU MAX_PROMPT_LEN is 1024, so
-# keep this tiny — no vector store, no disk, no summaries.
-HISTORY_TURNS = 4
-HISTORY_CHARS = 2200  # ~550 tokens; leave room for system + this user turn
-PERSONA_CHARS = 280
-
-PERSONAS = [
-    {"id": "plain", "label": "plain", "text": ""},
-    {"id": "dry", "label": "dry", "text": "You are dry, brief, slightly sarcastic. No fluff."},
-    {"id": "warm", "label": "warm", "text": "You are a calm, warm friend. Plain language, no cheerleading."},
-    {"id": "it", "label": "italiano", "text": "Parla italiano, tono da amico, naturale, non formale."},
-]
-
-
-def budget_prompt(max_new_tokens: int) -> str:
-    """Ask the model to finish a complete answer inside the token cap."""
-    words = max(8, int(max_new_tokens * 0.65))
-    if max_new_tokens <= 24:
-        shape = "one short sentence"
-    elif max_new_tokens <= 64:
-        shape = "one or two short sentences"
-    elif max_new_tokens <= 128:
-        shape = "a few short sentences"
-    else:
-        shape = "a short paragraph"
-    return (
-        f"Answer in {shape}, at most {words} words. "
-        "Plan a complete thought that fits this budget, then write only that. "
-        "Finish every sentence. Never stop mid-sentence. "
-        "No preamble, no lists. Same language as the user."
-    )
-
 
 def model_dir(hf_id: str) -> Path:
     return MODELS_NPU / hf_id.split("/")[-1]

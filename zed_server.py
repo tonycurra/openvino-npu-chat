@@ -40,7 +40,7 @@ DEVICE = "NPU"
 
 # Prompt tokens the compiled NPU graph can accept. Zed's agent prompt is large;
 # 4096 is enough for a short coding turn (instructions, tools, one file) and
-# still fits in this laptop's RAM. Older turns are dropped to stay under it.
+# still fits in a typical Core Ultra laptop. Older turns are dropped to stay under it.
 MAX_PROMPT_LEN = 4096
 # Generated tokens reserved in that same graph. Requests asking for more are capped.
 MIN_RESPONSE_LEN = 1024

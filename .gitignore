@@ -10,6 +10,17 @@ __pycache__/
 # Editor / IDE
 .zed/
 .claude/
+.vscode/
+
+# Tests and packaging
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
 
 # Hugging Face caches
 .cache/
